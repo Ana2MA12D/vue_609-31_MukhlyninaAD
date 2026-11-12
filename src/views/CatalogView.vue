@@ -1,0 +1,128 @@
+<script setup>
+import { onMounted, ref, computed, watch } from 'vue';
+import axios from 'axios';
+import VProduct from '@/components/VProduct.vue';
+import SearchInput from '@/components/SearchInput.vue';
+import SortSelect from '@/components/SortSelect.vue';
+import ProductSkeletonLoader from '@/components/ProductSkeletonLoader.vue';
+
+defineProps({
+    items: Array,
+});
+
+const items = ref([]);
+const showSkeletonLoader = ref(true);
+const fetchItems = async () => {
+  try {
+    const { data } = await axios.get(
+      "https://a9e26d38dda045cf.mokky.dev/items"
+    );
+    items.value = data.map((obj) => ({
+      ...obj,
+      isFavorite: false,
+      isAdded: false,
+    }));
+  } catch (e) {
+    console.log(e);
+  }
+};
+onMounted(async () => {
+  await fetchItems();
+  showSkeletonLoader.value = false;
+})
+
+const inputQuery = ref("");
+const searchQuery = ref("");
+const sortBy = ref(localStorage.getItem('shop_sort_by') || 'default');
+const sortOptions = [
+    { value: "default", label: "По умолчанию" },
+    { value: "price-asc", label: "Сначала дешевле" },
+    { value: "price-desc", label: "Сначала дороже" },
+    { value: "name-asc", label: "Название (А-Я)" },
+    { value: "name-desc", label: "Названия (Я-А)" },
+];
+
+watch(sortBy, (newValue) => {
+    localStorage.setItem('shop_sort_by', newValue);
+})
+
+let debounceTimeout = null;
+
+watch(inputQuery, (newVal) => {
+    clearTimeout(debounceTimeout);
+
+    if (!newVal.trim()) {
+        searchQuery.value = "";
+        return;
+    }
+
+    debounceTimeout = setTimeout(() => {
+        searchQuery.value = newVal;
+    }, 300);
+});
+
+const filteredProducts = computed(() => {
+    let result = [...items.value];
+
+    if(searchQuery.value.trim() !== "") {
+        const query = searchQuery.value.toLowerCase();
+        result = result.filter((product) =>
+            product.title.toLowerCase().includes(query),
+        );
+    }
+
+    if (sortBy.value === "price-asc") {
+        result.sort((a, b) => a.price - b.price);
+    } else if (sortBy.value === "price-desc") {
+        result.sort((a, b) => b.price - a.price);
+    } else if (sortBy.value === "name-asc") {
+        result.sort((a, b) =>
+            a.title.localeCompare(b.title, ["ru", "en"], {
+                sensitivity: "base",
+            }),
+        );
+    } else if (sortBy.value === "name-desc") {
+        result.sort((a, b) =>
+            b.title.localeCompare(a.title, ["ru", "en"], {
+                sensitivity: "base",
+            }),
+        );
+    }
+
+    return result;
+});
+</script>
+
+<template>
+    <main class="pt-10">
+        <div class="flex justify-between">
+            <h1 class="text-[40px] font-bold mb-5">Каталог</h1>
+            <div class="flex items-center gap-3 mb-4">
+                <search-input
+                    v-model="searchQuery"
+                    placeholder="Поиск по названию..."
+                />
+                <sort-select
+                    v-model="sortBy"
+                    :options="sortOptions"
+                />
+            </div>
+        </div>
+
+        <div class="grid grid-cols-5 gap-5">
+            <template v-if="showSkeletonLoader">
+                <product-skeleton-loader
+                    v-for="value in 10"
+                    :key="value"/>
+            </template>
+            <template v-else>
+                <v-product
+                    v-for="item in filteredProducts"
+                    :key="item.id"
+                    :product="item"
+                ></v-product>
+            <p v-if="filteredProducts.length === 0">Товары не найдены</p>
+            </template>
+        </div>
+    </main>
+</template>
